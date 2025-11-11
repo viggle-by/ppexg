@@ -1,4 +1,4 @@
-name: Windows VNC + noVNC + ngrok
+name: Windows VNC + noVNC + Cloudflared (Persistent)
 
 on:
   workflow_dispatch:
@@ -10,17 +10,21 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Install Chocolatey
-        run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+      - name: Install Python 3
+        run: choco install python -y
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
-          choco install -y tigervnc python 3
           python -m pip install --upgrade pip
           pip install websockify
+
+      - name: Download TigerVNC installer
+        run: |
+          Invoke-WebRequest -Uri "https://cytranet-dal.dl.sourceforge.net/project/tigervnc/stable/1.15.0/tigervnc-1.15.0.exe?viasf=1" -OutFile C:\tigervnc-1.15.0.exe
+
+      - name: Install TigerVNC silently
+        run: |
+          Start-Process -FilePath "C:\tigervnc-1.15.0.exe" -ArgumentList "/S" -Wait
 
       - name: Download noVNC
         run: |
@@ -28,30 +32,33 @@ jobs:
             git clone https://github.com/novnc/noVNC.git C:\novnc
           }
 
-      - name: Download ngrok
+      - name: Download Cloudflared
         run: |
-          Invoke-WebRequest -Uri https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile C:\ngrok.zip
-          Expand-Archive -Path C:\ngrok.zip -DestinationPath C:\ngrok -Force
+          Invoke-WebRequest -Uri https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -OutFile C:\cloudflared.exe
 
-      - name: Set VNC password
+      - name: Create VNC password
         run: |
-          # Create a password file for TigerVNC (plain text for demo)
-          echo "mypassword" | Out-File C:\vncpasswd.txt -Encoding ascii
+          New-Item -ItemType Directory -Force -Path C:\temp
+          echo "mypassword" > C:\temp\plainpass.txt
+          & "C:\Program Files\TigerVNC\vncpasswd.exe" -f < "C:\temp\plainpass.txt" > C:\vncpasswd.txt
 
       - name: Start VNC server
         run: |
-          & "C:\Program Files\TigerVNC\vncserver.exe" :1 -PasswordFile C:\vncpasswd.txt
+          Start-Process -FilePath "C:\Program Files\TigerVNC\vncserver.exe" -ArgumentList ":1 -PasswordFile C:\vncpasswd.txt" -NoNewWindow
 
       - name: Start noVNC
         run: |
           cd C:\novnc
-          Start-Process -NoNewWindow python -ArgumentList "-m websockify --web . 6080 localhost:5901"
+          Start-Process -FilePath "python" -ArgumentList "-m websockify --web . 6080 localhost:5901" -NoNewWindow
 
-      - name: Start ngrok to expose noVNC
+      - name: Start Cloudflared tunnel
         run: |
-          cd C:\ngrok
-          Start-Process -NoNewWindow ngrok.exe -ArgumentList "http 6080"
+          Start-Process -FilePath "C:\cloudflared.exe" -ArgumentList "tunnel --url http://localhost:6080" -NoNewWindow
 
-      - name: Show ngrok URL
+      - name: Keep workflow alive (like tail -f /dev/null)
         run: |
-          Write-Host "Open your browser to the ngrok URL above to access noVNC"
+          Write-Host "Runner will stay alive for 1 hour to keep VNC/noVNC accessible..."
+          $end = (Get-Date).AddHours(1)
+          while ((Get-Date) -lt $end) {
+            Start-Sleep -Seconds 10
+          }
