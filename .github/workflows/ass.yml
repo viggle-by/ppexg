@@ -1,0 +1,43 @@
+name: Windows VNC + noVNC
+
+on:
+  workflow_dispatch:
+
+jobs:
+  vnc-novnc:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install Chocolatey
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+      - name: Install TigerVNC
+        run: choco install tigervnc -y
+
+      - name: Install Python 3
+        run: choco install python -y
+
+      - name: Install noVNC dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install websockify
+
+      - name: Download noVNC
+        run: |
+          if (-Not (Test-Path "C:\novnc")) {
+            git clone https://github.com/novnc/noVNC.git C:\novnc
+          }
+
+      - name: Start VNC server
+        run: |
+          & "C:\Program Files\TigerVNC\vncserver.exe" :1 -PasswordFile C:\vncpasswd.txt
+
+      - name: Start noVNC
+        run: |
+          cd C:\novnc
+          python -m websockify -D --web . 6080 localhost:5901
