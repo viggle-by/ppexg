@@ -1,4 +1,4 @@
-name: Windows VNC + noVNC
+name: Windows VNC + noVNC + ngrok
 
 on:
   workflow_dispatch:
@@ -16,14 +16,9 @@ jobs:
           [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
           iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 
-      - name: Install TigerVNC
-        run: choco install tigervnc -y
-
-      - name: Install Python 3
-        run: choco install python -y
-
-      - name: Install noVNC dependencies
+      - name: Install dependencies
         run: |
+          choco install -y tigervnc python 3
           python -m pip install --upgrade pip
           pip install websockify
 
@@ -33,6 +28,16 @@ jobs:
             git clone https://github.com/novnc/noVNC.git C:\novnc
           }
 
+      - name: Download ngrok
+        run: |
+          Invoke-WebRequest -Uri https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile C:\ngrok.zip
+          Expand-Archive -Path C:\ngrok.zip -DestinationPath C:\ngrok -Force
+
+      - name: Set VNC password
+        run: |
+          # Create a password file for TigerVNC (plain text for demo)
+          echo "mypassword" | Out-File C:\vncpasswd.txt -Encoding ascii
+
       - name: Start VNC server
         run: |
           & "C:\Program Files\TigerVNC\vncserver.exe" :1 -PasswordFile C:\vncpasswd.txt
@@ -40,4 +45,13 @@ jobs:
       - name: Start noVNC
         run: |
           cd C:\novnc
-          python -m websockify -D --web . 6080 localhost:5901
+          Start-Process -NoNewWindow python -ArgumentList "-m websockify --web . 6080 localhost:5901"
+
+      - name: Start ngrok to expose noVNC
+        run: |
+          cd C:\ngrok
+          Start-Process -NoNewWindow ngrok.exe -ArgumentList "http 6080"
+
+      - name: Show ngrok URL
+        run: |
+          Write-Host "Open your browser to the ngrok URL above to access noVNC"
